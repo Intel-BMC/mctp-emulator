@@ -6,8 +6,9 @@ extern std::shared_ptr<sdbusplus::asio::connection> bus;
 extern std::vector<std::shared_ptr<sdbusplus::asio::dbus_interface>>
     endpointInterface;
 // TODO:Use the hpp from D-Bus interface
-enum class binding
+enum class bindType
 {
+    undefined = 0x0,
     smbus = 0x01,
     pcie = 0x02,
     usb = 0x03,

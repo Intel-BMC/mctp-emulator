@@ -163,6 +163,26 @@ void initEndPointDevices(
 int main()
 {
     std::string mctpBaseObj = "/xyz/openbmc_project/mctp";
+    std::string binding;
+
+    std::string configPath = "/usr/share/mctp-emulator/binding_config.json";
+
+    std::ifstream jsonfile(configPath);
+    if (!jsonfile.is_open())
+    {
+        std::cerr << "The config file could not be opened " << std::endl;
+        return -1;
+    }
+
+    json jsonConfig = json::parse(jsonfile, nullptr, false);
+    if (jsonConfig.size() == 0 || !jsonConfig.contains("bindtype"))
+    {
+        std::cerr << "The config file is invalid " << std::endl;
+        return -1;
+    }
+
+    binding = jsonConfig["bindtype"];
+
     boost::asio::io_context ioc;
     boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
     signals.async_wait(
@@ -178,7 +198,22 @@ int main()
         *bus, mctpBaseObj.c_str());
 
     // Create a virtual binding
-    OemBinding oemInstance(objectServer, mctpBaseObj);
+    bindType val = bindType::undefined;
+    if (!binding.compare("smbus"))
+    {
+        val = bindType::smbus;
+    }
+    else if (!binding.compare("pcie"))
+    {
+        val = bindType::pcie;
+    }
+    else
+    {
+        // default binding incase not known/undefined.
+        val = bindType::vendorDefined;
+    }
+
+    OemBinding oemInstance(objectServer, mctpBaseObj, val);
     initEndPointDevices(objectServer);
 
     ioc.run();
