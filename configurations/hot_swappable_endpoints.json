@@ -1,0 +1,27 @@
+{
+    "Endpoints": [
+        {
+            "Eid": 11,
+            "Mode": "endpoint",
+            "NetworkId": 50,
+            "SupportedMessageTypes": {
+                "Ethernet": false,
+                "MctpControl": true,
+                "NCSI": false,
+                "NVMeMgmtMsg": true,
+                "PLDM": true,
+                "SECUREDMSG": true,
+                "SPDM": true,
+                "VDIANA": false,
+                "VDPCI": true
+            },
+            "Uuid": "70690a4e-7015-11ec-90d6-0242ac120003",
+            "VDPCIMT": {
+                "CapabilitySets": [
+                    6,
+                    9
+                ]
+            }
+        }
+    ]
+}

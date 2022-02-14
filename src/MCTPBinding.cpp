@@ -14,19 +14,33 @@
 #include <sdbusplus/bus.hpp>
 #include <xyz/openbmc_project/Common/error.hpp>
 #include <xyz/openbmc_project/MCTP/Base/server.hpp>
+#include <xyz/openbmc_project/MCTP/Endpoint/server.hpp>
+#include <xyz/openbmc_project/MCTP/SupportedMessageTypes/server.hpp>
 
 #include "libmctp-msgtypes.h"
 #include "libmctp-vdpci.h"
-#include "libmctp.h"
-
-std::vector<std::shared_ptr<sdbusplus::asio::dbus_interface>> endpointInterface;
 
 using json = nlohmann::json;
 using mctp_base = sdbusplus::xyz::openbmc_project::MCTP::server::Base;
+using mctp_endpoint = sdbusplus::xyz::openbmc_project::MCTP::server::Endpoint;
+using mctp_msg_types =
+    sdbusplus::xyz::openbmc_project::MCTP::server::SupportedMessageTypes;
+
+EndpointInterfaceMap endpointInterface;
+
+std::unordered_map<std::string, mctp_base::BindingModeTypes>
+    stringToBindingModeMap = {
+        {"busowner", mctp_base::BindingModeTypes::BusOwner},
+        {"endpoint", mctp_base::BindingModeTypes::Endpoint}};
 
 std::string epReqRespFile = "/usr/share/mctp-emulator/req_resp_";
 
-std::string reqRespDataFile = "/usr/share/mctp-emulator/req_resp.json";
+std::string hotSwappableDataFile =
+    "/usr/share/mctp-emulator/hot_swappable_endpoints.json";
+std::string uuidIntf = "xyz.openbmc_project.Common.UUID";
+
+std::string pciVdMsgIntf = "xyz.openbmc_project.MCTP.PCIVendorDefined";
+std::string mctpDevObj = "/xyz/openbmc_project/mctp/device/";
 
 static std::string uuid;
 std::string uuidCommonIntf = "xyz.openbmc_project.Common.UUID";
@@ -36,7 +50,6 @@ constexpr sd_id128_t mctpdAppId = SD_ID128_MAKE(29, 1f, 30, a7, 33, dd, 4c, 25,
 std::shared_ptr<sdbusplus::asio::dbus_interface> endpointIntf;
 std::shared_ptr<sdbusplus::asio::dbus_interface> mctpInterface;
 std::string mctpIntf = "xyz.openbmc_project.MCTP.Base";
-std::string mctpUuidF = "xyz.openbmc_project.Common.UUID";
 bool timerExpired = true;
 
 static std::unique_ptr<boost::asio::steady_timer> delayTimer;
@@ -45,6 +58,135 @@ static std::vector<std::pair<
     respQueue;
 
 constexpr int retryTimeMilliSec = 10;
+
+void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
+{
+    std::ifstream jsonFile(file);
+    if (!jsonFile.good())
+    {
+        std::cerr << "unable to open " << file << "\n";
+    }
+    json endpoints = nullptr;
+    uint8_t dstEid;
+    std::string dstUuid;
+    mctp_base::BindingModeTypes mode;
+    uint16_t networkId;
+    json msgType;
+    bool mctpControl;
+    bool pldm;
+    bool ncsi;
+    bool ethernet;
+    bool nvmeMgmtMsg;
+    bool spdm;
+    bool securedMsg;
+    bool vdpci;
+    bool vdiana;
+    std::string vendorID = "0x8086";
+    std::vector<uint16_t> msgTypeProperty;
+    try
+    {
+        endpoints = json::parse(jsonFile, nullptr, false);
+    }
+    catch (json::exception& e)
+    {
+        std::cerr << "Error parsing " << file << "\n"
+                  << "message: " << e.what() << '\n'
+                  << "exception id: " << e.id << std::endl;
+        return;
+    }
+    // Create an interface for each of the endpoints parsed in given json
+    // file
+    for (auto iter : endpoints["Endpoints"])
+    {
+        // If destId has been provided, add data for just that endpoint.
+        // Otherwise add all endpoints in json file
+        if (iter["Eid"] == destId || !destId.has_value())
+        {
+            try
+            {
+                dstEid = iter["Eid"];
+                std::cout << dstEid << std::endl;
+                dstUuid = iter["Uuid"];
+                mode = stringToBindingModeMap.at(iter["Mode"]);
+                networkId = iter["NetworkId"];
+                msgType = iter["SupportedMessageTypes"];
+                mctpControl = msgType["MctpControl"];
+                pldm = msgType["PLDM"];
+                ncsi = msgType["NCSI"];
+                ethernet = msgType["Ethernet"];
+                nvmeMgmtMsg = msgType["NVMeMgmtMsg"];
+                spdm = msgType["SPDM"];
+                securedMsg = msgType["SECUREDMSG"];
+                vdpci = msgType["VDPCI"];
+                vdiana = msgType["VDIANA"];
+                if (vdpci == true)
+                {
+                    json vdpcimt = iter["VDPCIMT"];
+                    msgTypeProperty = vdpcimt.at("CapabilitySets")
+                                          .get<std::vector<uint16_t>>();
+                }
+            }
+            catch (json::exception& e)
+            {
+                std::cerr << "message: " << e.what() << '\n'
+                          << "exception id: " << e.id << std::endl;
+                continue;
+            }
+            catch (std::out_of_range& e)
+            {
+                std::cerr << "message: " << e.what() << std::endl;
+                continue;
+            }
+            std::shared_ptr<sdbusplus::asio::dbus_interface> epIntf;
+            std::shared_ptr<sdbusplus::asio::dbus_interface> msgTypeIntf;
+            std::shared_ptr<sdbusplus::asio::dbus_interface> vendorDefMsgIntf;
+            std::string mctpEpObj = mctpDevObj + std::to_string(dstEid);
+            std::shared_ptr<sdbusplus::asio::dbus_interface> uuidEndPointIntf;
+            auto enpointObjManager =
+                std::make_shared<sdbusplus::server::manager::manager>(
+                    *bus, mctpEpObj.c_str());
+            epIntf = objectServer->add_interface(mctpEpObj,
+                                                 mctp_endpoint::interface);
+            epIntf->register_property(
+                "Mode", mctp_base::convertBindingModeTypesToString(mode));
+            epIntf->register_property("NetworkId", networkId);
+            epIntf->initialize();
+            endpointInterface.emplace(dstEid, epIntf);
+            msgTypeIntf = objectServer->add_interface(
+                mctpEpObj, mctp_msg_types::interface);
+            msgTypeIntf->register_property("MctpControl", mctpControl);
+            msgTypeIntf->register_property("PLDM", pldm);
+            msgTypeIntf->register_property("NCSI", ncsi);
+            msgTypeIntf->register_property("Ethernet", ethernet);
+            msgTypeIntf->register_property("NVMeMgmtMsg", nvmeMgmtMsg);
+            msgTypeIntf->register_property("SPDM", spdm);
+            msgTypeIntf->register_property("SECUREDMSG", securedMsg);
+            msgTypeIntf->register_property("VDPCI", vdpci);
+            msgTypeIntf->register_property("VDIANA", vdiana);
+            msgTypeIntf->initialize();
+            msgInterfaces.emplace(dstEid, msgTypeIntf);
+
+            if (vdpci == true)
+            {
+                vendorDefMsgIntf =
+                    objectServer->add_interface(mctpEpObj, pciVdMsgIntf);
+                vendorDefMsgIntf->register_property("VendorID", vendorID);
+                vendorDefMsgIntf->register_property("MessageTypeProperty",
+                                                    msgTypeProperty);
+                vendorDefMsgIntf->initialize();
+                vendorInterfaces.emplace(dstEid, vendorDefMsgIntf);
+            }
+
+            uuidEndPointIntf = objectServer->add_interface(mctpEpObj, uuidIntf);
+            uuidEndPointIntf->register_property("UUID", dstUuid);
+            uuidEndPointIntf->initialize();
+            uuidInterfaces.emplace(dstEid, uuidEndPointIntf);
+            phosphor::logging::log<phosphor::logging::level::INFO>(
+                ("mctp-emulator: Added Endpoint " + std::to_string(dstEid))
+                    .c_str());
+        }
+    }
+}
 
 void MctpBinding::getSystemAppUuid(void)
 {
@@ -64,6 +206,19 @@ void MctpBinding::getSystemAppUuid(void)
     {
         uuid.insert(offset, "-");
     }
+}
+
+bool MctpBinding::removeInterface(mctp_eid_t dstEid,
+                                  EndpointInterfaceMap& interfaces)
+{
+    auto iter = interfaces.find(dstEid);
+    if (iter != interfaces.end())
+    {
+        objectServer->remove_interface(iter->second);
+        interfaces.erase(iter);
+        return true;
+    }
+    return false;
 }
 
 static void sendMessageReceivedSignal(uint8_t msgType, uint8_t srcEid,
@@ -434,22 +589,7 @@ std::optional<std::pair<int, std::vector<uint8_t>>>
         return std::nullopt;
     }
 
-    if (std::find_if(
-            endpointInterface.begin(), endpointInterface.end(),
-            [&, dstEid](
-                std::shared_ptr<sdbusplus::asio::dbus_interface> const& p) {
-                std::string path = p->get_object_path();
-                size_t found = path.find_last_of("/");
-                if (found == std::string::npos)
-                {
-                    phosphor::logging::log<phosphor::logging::level::INFO>(
-                        "mctp-emulator: eid not found in path");
-                    return false;
-                }
-                uint8_t s_eid =
-                    static_cast<uint8_t>(std::stoi(path.substr(found + 1)));
-                return (dstEid == s_eid);
-            }) == endpointInterface.end())
+    if (endpointInterface.find(dstEid) == endpointInterface.end())
     {
         phosphor::logging::log<phosphor::logging::level::INFO>(
             "mctp-emulator: No EID match found hence no processPayload");
@@ -492,7 +632,8 @@ std::optional<std::pair<int, std::vector<uint8_t>>>
 
 MctpBinding::MctpBinding(
     std::shared_ptr<sdbusplus::asio::object_server>& objServer,
-    std::string& objPath)
+    std::string& objPath) :
+    objectServer(objServer)
 {
     phosphor::logging::log<phosphor::logging::level::INFO>(
         "mctp-emulator: MctpBinding constructor call...");
@@ -506,6 +647,49 @@ MctpBinding::MctpBinding(
         std::make_unique<boost::asio::steady_timer>(bus->get_io_context());
 
     mctpInterface = objServer->add_interface(objPath, mctpIntf.c_str());
+
+    // Provide specific EID in json data file to add to network
+    mctpInterface->register_method("AddDevice", [this](uint8_t destId) {
+        addEndpoints(hotSwappableDataFile, destId);
+    });
+
+    // Provide specific EID in json data file to remove from network
+    mctpInterface->register_method("RemoveDevice", [this](uint8_t destId) {
+        std::ifstream jsonFile(hotSwappableDataFile);
+        if (!jsonFile.good())
+        {
+            std::cerr << "unable to open " << hotSwappableDataFile << "\n";
+        }
+        json endpoints = nullptr;
+        try
+        {
+            endpoints = json::parse(jsonFile, nullptr, false);
+        }
+        catch (json::exception& e)
+        {
+            std::cerr << "Error parsing " << hotSwappableDataFile << "\n"
+                      << "message: " << e.what() << '\n'
+                      << "exception id: " << e.id << std::endl;
+            return;
+        }
+        for (auto endpoint : endpoints["Endpoints"])
+        {
+            mctp_eid_t endpoint_id = endpoint["Eid"];
+            if (endpoint_id == destId)
+            {
+                removeInterface(endpoint_id, msgInterfaces);
+                removeInterface(endpoint_id, vendorInterfaces);
+                removeInterface(endpoint_id, uuidInterfaces);
+                removeInterface(endpoint_id, endpointInterface);
+
+                return;
+            }
+        }
+        phosphor::logging::log<phosphor::logging::level::INFO>(
+            ("mctp-emulator: EID " + std::to_string(destId) +
+             " is not a hot swappable endpoint")
+                .c_str());
+    });
 
     mctpInterface->register_method(
         "SendMctpMessagePayload",
