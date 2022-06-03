@@ -9,7 +9,7 @@ using EndpointInterfaceMap =
                        std::shared_ptr<sdbusplus::asio::dbus_interface>>;
 
 extern std::shared_ptr<sdbusplus::asio::connection> bus;
-extern EndpointInterfaceMap endpointInterface;
+
 
 // TODO:Use the hpp from D-Bus interface
 enum class bindType
@@ -29,12 +29,13 @@ class MctpBinding
     MctpBinding(std::shared_ptr<sdbusplus::asio::object_server>& objServer,
                 std::string& objPath);
     MctpBinding() = delete;
-    ~MctpBinding() = default;
     void addEndpoints(std::string file, std::optional<uint8_t> destId = std::nullopt);
+    ~MctpBinding();
 
   private:
     uint8_t eid;
     std::shared_ptr<sdbusplus::asio::object_server> objectServer;
+    EndpointInterfaceMap endpointInterface;
     EndpointInterfaceMap msgInterfaces;
     EndpointInterfaceMap vendorInterfaces;
     EndpointInterfaceMap uuidInterfaces;

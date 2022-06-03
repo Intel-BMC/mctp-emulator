@@ -41,6 +41,7 @@ std::string uuidIntf = "xyz.openbmc_project.Common.UUID";
 
 std::string pciVdMsgIntf = "xyz.openbmc_project.MCTP.PCIVendorDefined";
 std::string mctpDevObj = "/xyz/openbmc_project/mctp/device/";
+std::string mctpBaseObj = "/xyz/openbmc_project/mctp";
 
 static std::string uuid;
 std::string uuidCommonIntf = "xyz.openbmc_project.Common.UUID";
@@ -96,6 +97,10 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
     }
     // Create an interface for each of the endpoints parsed in given json
     // file
+    auto enpointObjManager =
+                std::make_shared<sdbusplus::server::manager::manager>(
+                    *bus, mctpBaseObj.c_str());
+
     for (auto iter : endpoints["Endpoints"])
     {
         // If destId has been provided, add data for just that endpoint.
@@ -140,11 +145,10 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
             std::shared_ptr<sdbusplus::asio::dbus_interface> epIntf;
             std::shared_ptr<sdbusplus::asio::dbus_interface> msgTypeIntf;
             std::shared_ptr<sdbusplus::asio::dbus_interface> vendorDefMsgIntf;
-            std::string mctpEpObj = mctpDevObj + std::to_string(dstEid);
             std::shared_ptr<sdbusplus::asio::dbus_interface> uuidEndPointIntf;
-            auto enpointObjManager =
-                std::make_shared<sdbusplus::server::manager::manager>(
-                    *bus, mctpEpObj.c_str());
+            
+            std::string mctpEpObj = mctpDevObj + std::to_string(dstEid);
+            
             epIntf = objectServer->add_interface(mctpEpObj,
                                                  mctp_endpoint::interface);
             epIntf->register_property(
@@ -152,6 +156,7 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
             epIntf->register_property("NetworkId", networkId);
             epIntf->initialize();
             endpointInterface.emplace(dstEid, epIntf);
+
             msgTypeIntf = objectServer->add_interface(
                 mctpEpObj, mctp_msg_types::interface);
             msgTypeIntf->register_property("MctpControl", mctpControl);
@@ -181,6 +186,7 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
             uuidEndPointIntf->register_property("UUID", dstUuid);
             uuidEndPointIntf->initialize();
             uuidInterfaces.emplace(dstEid, uuidEndPointIntf);
+
             phosphor::logging::log<phosphor::logging::level::INFO>(
                 ("mctp-emulator: Added Endpoint " + std::to_string(dstEid))
                     .c_str());
@@ -635,8 +641,6 @@ MctpBinding::MctpBinding(
     std::string& objPath) :
     objectServer(objServer)
 {
-    phosphor::logging::log<phosphor::logging::level::INFO>(
-        "mctp-emulator: MctpBinding constructor call...");
     eid = 8;
 
     uint8_t bindingType = 0xFF; // OEM Binding
@@ -777,4 +781,24 @@ MctpBinding::MctpBinding(
     endpointIntf->register_property("UUID", uuid);
 
     endpointIntf->initialize();
+}
+
+MctpBinding::~MctpBinding() {
+    /* remove all interfaces */
+    for(auto& [ep, iface] : msgInterfaces)
+    {
+        objectServer->remove_interface(iface);
+    }
+    for(auto& [ep, iface] : vendorInterfaces)
+    {
+        objectServer->remove_interface(iface);
+    }
+    for(auto& [ep, iface] : uuidInterfaces)
+    {
+        objectServer->remove_interface(iface);
+    }
+    for(auto& [ep, iface] : endpointInterface)
+    {
+        objectServer->remove_interface(iface);
+    }
 }
