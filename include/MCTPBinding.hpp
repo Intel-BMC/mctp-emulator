@@ -8,6 +8,8 @@ using EndpointInterfaceMap =
     std::unordered_map<mctp_eid_t,
                        std::shared_ptr<sdbusplus::asio::dbus_interface>>;
 
+extern EndpointInterfaceMap endpointInterface;
+
 extern std::shared_ptr<sdbusplus::asio::connection> bus;
 
 
@@ -35,7 +37,6 @@ class MctpBinding
   private:
     uint8_t eid;
     std::shared_ptr<sdbusplus::asio::object_server> objectServer;
-    EndpointInterfaceMap endpointInterface;
     EndpointInterfaceMap msgInterfaces;
     EndpointInterfaceMap vendorInterfaces;
     EndpointInterfaceMap uuidInterfaces;

@@ -26,8 +26,6 @@ using mctp_endpoint = sdbusplus::xyz::openbmc_project::MCTP::server::Endpoint;
 using mctp_msg_types =
     sdbusplus::xyz::openbmc_project::MCTP::server::SupportedMessageTypes;
 
-EndpointInterfaceMap endpointInterface;
-
 std::unordered_map<std::string, mctp_base::BindingModeTypes>
     stringToBindingModeMap = {
         {"busowner", mctp_base::BindingModeTypes::BusOwner},
@@ -42,6 +40,8 @@ std::string uuidIntf = "xyz.openbmc_project.Common.UUID";
 std::string pciVdMsgIntf = "xyz.openbmc_project.MCTP.PCIVendorDefined";
 std::string mctpDevObj = "/xyz/openbmc_project/mctp/device/";
 std::string mctpBaseObj = "/xyz/openbmc_project/mctp";
+
+EndpointInterfaceMap endpointInterface;
 
 static std::string uuid;
 std::string uuidCommonIntf = "xyz.openbmc_project.Common.UUID";
