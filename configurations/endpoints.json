@@ -70,7 +70,48 @@
             }
         },
         {
+            "AdditionalInterfaces": [
+                {
+                    "xyz.openbmc_project.Inventory.Decorator.PCIDevice": {
+                        "Bus": 106,
+                        "Device": 3,
+                        "Function": 0
+                    }
+                }
+            ],
             "Eid": 29,
+            "Mode": "endpoint",
+            "NetworkId": 10,
+            "SupportedMessageTypes": {
+                "Ethernet": false,
+                "MctpControl": true,
+                "NCSI": false,
+                "NVMeMgmtMsg": false,
+                "PLDM": true,
+                "SECUREDMSG": true,
+                "SPDM": true,
+                "VDIANA": false,
+                "VDPCI": true
+            },
+            "Uuid": "cba227b7-3144-4573-a824-5cd4557e54e1",
+            "VDPCIMT": {
+                "CapabilitySets": [
+                    5,
+                    9
+                ]
+            }
+        },
+        {
+            "AdditionalInterfaces": [
+                {
+                    "xyz.openbmc_project.Inventory.Decorator.PCIDevice": {
+                        "Bus": 104,
+                        "Device": 3,
+                        "Function": 0
+                    }
+                }
+            ],
+            "Eid": 61,
             "Mode": "endpoint",
             "NetworkId": 10,
             "SupportedMessageTypes": {

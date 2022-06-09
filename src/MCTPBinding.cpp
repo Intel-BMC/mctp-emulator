@@ -41,6 +41,8 @@ std::string pciVdMsgIntf = "xyz.openbmc_project.MCTP.PCIVendorDefined";
 std::string mctpDevObj = "/xyz/openbmc_project/mctp/device/";
 std::string mctpBaseObj = "/xyz/openbmc_project/mctp";
 
+constexpr const std::string_view addIface = "AdditionalInterfaces";
+
 EndpointInterfaceMap endpointInterface;
 
 static std::string uuid;
@@ -98,11 +100,12 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
     // Create an interface for each of the endpoints parsed in given json
     // file
     auto enpointObjManager =
-                std::make_shared<sdbusplus::server::manager::manager>(
-                    *bus, mctpBaseObj.c_str());
+        std::make_shared<sdbusplus::server::manager::manager>(
+            *bus, mctpBaseObj.c_str());
 
     for (auto iter : endpoints["Endpoints"])
     {
+        std::string mctpEpObj;
         // If destId has been provided, add data for just that endpoint.
         // Otherwise add all endpoints in json file
         if (iter["Eid"] == destId || !destId.has_value())
@@ -110,7 +113,7 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
             try
             {
                 dstEid = iter["Eid"];
-                std::cout << dstEid << std::endl;
+                mctpEpObj = mctpDevObj + std::to_string(dstEid);
                 dstUuid = iter["Uuid"];
                 mode = stringToBindingModeMap.at(iter["Mode"]);
                 networkId = iter["NetworkId"];
@@ -130,6 +133,32 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
                     msgTypeProperty = vdpcimt.at("CapabilitySets")
                                           .get<std::vector<uint16_t>>();
                 }
+
+                if (iter.contains(addIface))
+                {
+                    // Additional interfaces are to be populated on the endpoint
+                    // object
+                    for (auto& it : iter[std::string(addIface).c_str()].items())
+                    {
+                        for (auto& ifaceList : it.value().items())
+                        {
+                            auto epIntf = objectServer->add_interface(
+                                mctpEpObj, ifaceList.key());
+
+                            for (auto& propertyList : ifaceList.value().items())
+                            {
+                                std::string propertyName(propertyList.key());
+                                // TODO: Property value could be of any type,
+                                // deduce the property type using type() API
+                                // uint8_t should suffice for now
+                                uint8_t propertyValue = propertyList.value();
+                                epIntf->register_property(propertyName,
+                                                          propertyValue);
+                            }
+                            epIntf->initialize();
+                        }
+                    }
+                }
             }
             catch (json::exception& e)
             {
@@ -146,9 +175,7 @@ void MctpBinding::addEndpoints(std::string file, std::optional<uint8_t> destId)
             std::shared_ptr<sdbusplus::asio::dbus_interface> msgTypeIntf;
             std::shared_ptr<sdbusplus::asio::dbus_interface> vendorDefMsgIntf;
             std::shared_ptr<sdbusplus::asio::dbus_interface> uuidEndPointIntf;
-            
-            std::string mctpEpObj = mctpDevObj + std::to_string(dstEid);
-            
+
             epIntf = objectServer->add_interface(mctpEpObj,
                                                  mctp_endpoint::interface);
             epIntf->register_property(
@@ -783,21 +810,22 @@ MctpBinding::MctpBinding(
     endpointIntf->initialize();
 }
 
-MctpBinding::~MctpBinding() {
+MctpBinding::~MctpBinding()
+{
     /* remove all interfaces */
-    for(auto& [ep, iface] : msgInterfaces)
+    for (auto& [ep, iface] : msgInterfaces)
     {
         objectServer->remove_interface(iface);
     }
-    for(auto& [ep, iface] : vendorInterfaces)
+    for (auto& [ep, iface] : vendorInterfaces)
     {
         objectServer->remove_interface(iface);
     }
-    for(auto& [ep, iface] : uuidInterfaces)
+    for (auto& [ep, iface] : uuidInterfaces)
     {
         objectServer->remove_interface(iface);
     }
-    for(auto& [ep, iface] : endpointInterface)
+    for (auto& [ep, iface] : endpointInterface)
     {
         objectServer->remove_interface(iface);
     }
